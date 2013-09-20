@@ -1,8 +1,8 @@
-#include <matrix.h>
+#include "matrix.h"
 
 struct MatrixImpl {
-  size_t rows;
-  size_t columns;
+  int rows;
+  int columns;
   int *data;
 };
 
@@ -11,10 +11,16 @@ struct MatrixImpl {
  *  to point to the newly created matrix.
  */
 int new_matrix(int numRows, int numCols, Matrix **matrix) {
-  Matrix *matrixP = malloc( 2 * sizeof(size_t) + numRows * numCols * sizeof(int) );
+    
+  Matrix *matrixP = (Matrix *)malloc( sizeof(Matrix) );
+
+  matrixP->data = (int *)malloc( numRows * numCols * sizeof(int) );
   if(matrixP == NULL) {
     return errno;
   }
+  matrixP->rows = numRows;
+  matrixP->columns = numCols;
+
   *matrix = matrixP;
   return 0;
 }
@@ -31,10 +37,10 @@ int free_matrix(Matrix *matrix) {
  */
 int get_matrix_dimensions(const Matrix *matrix, int *numRowsP, int *numColsP) { 
   if(numRowsP != NULL) {
-    numRowsP = matrix->rows;
+    *numRowsP = matrix->rows;
   }
   if(numColsP != NULL) {
-    numColsP = matrix->columns;
+    *numColsP = matrix->columns;
   }
   return 0;
 }
@@ -49,8 +55,9 @@ int get_matrix_entry(const Matrix *matrix, int i, int j, int *value) {
   if(j >= matrix->rows || j < 0) {
     return ECHRNG;
   }
-
-  value = matrix->data[ i * matrix->columns + j ];
+  if(value == NULL)
+      value = (int *)malloc(sizeof(int));
+  *value = matrix->data[ i * matrix->columns + j ];
   return 0;
 }
 
@@ -65,7 +72,6 @@ int set_matrix_entry(Matrix *matrix, int i, int j, int value) {
   if(j >= matrix->rows || j < 0) {
     return ECHRNG;
   }
-
   matrix->data[ i * matrix->columns + j ] = value;
   return 0;
 }
@@ -74,13 +80,16 @@ int set_matrix_entry(Matrix *matrix, int i, int j, int value) {
  *  read from text stream in in row-major format.
  */
 int read_matrix(FILE *in, Matrix *a) {
-  if(in == NULL) {
-    return EBADFD;
-  }
-  int *ptr;
-  size_t index = 0;
-  while(fscanf(in, "%d", ptr) != EOF) {
-    a->data[ index++ ] = *ptr;
+  int rows, columns, value;
+  rows = a->rows;
+  columns = a->columns;
+  for(int i = 0; i < rows; i++) {
+    for(int j = 0; j < columns; j++) {
+      if (read_next_int(in, &value) != 0) {
+        return EINVAL;
+      }
+      set_matrix_entry(a, i, j, value);
+    }
   }
   return 0;
 }
@@ -111,9 +120,6 @@ int add_matrix(const Matrix *a, const Matrix *b, Matrix *c) {
   if(a->rows != b->rows || a->columns != b->columns) {
     return EINVAL;
   }
-  int result = new_matrix(a->rows, a->columns, &c);
-  if(result != 0) 
-    return errno;
   for(int i = 0; i < a->rows * a->columns; ++i) {
     c->data[i] = a->data[i] + b->data[i];
   }
@@ -128,11 +134,22 @@ int multiply_matrix(const Matrix *a, const Matrix *b, Matrix *c) {
   if(a->columns != b->rows) {
     return EINVAL;
   }
-  int result = new_matrix(a->rows, a->columns, &c);
-  if(result != 0) 
-    return errno;
-  for(int i = 0; i < a->rows * a->columns; ++i) {
-    c->data[i] = a->data[i] * b->data[i];
+  int columns = b->columns, rows = a->rows;
+  for (int i = 0; i < rows; ++i) {
+    for (int j = 0; j < columns; ++j) {
+      c->data[i * columns + j] = 0;
+      for (int k = 0; k < columns; ++k) {
+        c->data[i * columns + j] += a->data[i * columns + k] * b->data[k * columns + j];
+      }
+    }
   }
+  /*
+  for (int i = 0; i < rows * columns; ++i) {
+    c->data[i] = 0;
+    for (int k = 0; k < columns; ++k) {
+      c->data[i] += a->data[i + k] * b->data[i + columns * k];
+    }
+  }
+  */
   return 0;
 }
